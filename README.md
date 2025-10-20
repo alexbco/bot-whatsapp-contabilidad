@@ -1,4 +1,4 @@
-# 🤖 Bot de WhatsApp Contabilidad – Antonio Edition
+# 🤖 Bot de WhatsApp Contabilidad
 
 Un bot de contabilidad personalizado desarrollado con **Node.js**, **Express** y la **WhatsApp Cloud API**.  
 Permite registrar pagos, consultar totales mensuales, buscar registros, generar rankings y exportar los datos a CSV.  
