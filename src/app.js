@@ -1,3 +1,5 @@
+import { router as webhookRouter } from "./routes/webhook.js";
+app.use("/webhook", webhookRouter);
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
