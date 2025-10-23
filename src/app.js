@@ -6,73 +6,75 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import "./db/connection.js"; // inicializa SQLite
-import { router as webhookRouter } from "./routes/webhook.js";
-import { logInfo, logWarn } from "./utils/loger.js"; // (typo: ¿no sería logger.js?)
+// Conexión a la base de datos SQLite
+import "./db/connection.js";
 
-// ───────────────────────────────────────────────────────────────
-// 1) Config / ENV
-// ───────────────────────────────────────────────────────────────
+// Importamos las rutas del bot
+import { router as webhookRouter } from "./routes/webhook.js";
+
+// Funciones para logs personalizados
+import { logInfo, logWarn } from "./utils/loger.js";
+
+// ============================================================
+// 1️⃣ CONFIGURACIÓN INICIAL
+// ============================================================
+
+// Cargar variables del archivo .env
 dotenv.config();
 
-function requireEnv(keys) {
-  const missing = keys.filter((k) => !process.env[k]);
-  if (missing.length) {
-    missing.forEach((k) => logWarn(`⚠️ Falta ${k} en .env`));
-  }
+// Comprobamos que las variables importantes existan
+const variablesNecesarias = ["WHATSAPP_TOKEN", "PHONE_NUMBER_ID", "VERIFY_TOKEN"];
+for (const variable of variablesNecesarias) {
+  if (!process.env[variable]) logWarn(`⚠️ Falta la variable ${variable} en .env`);
 }
-requireEnv(["WHATSAPP_TOKEN", "PHONE_NUMBER_ID", "VERIFY_TOKEN"]);
 
-const PORT = Number(process.env.PORT ?? 3000);
+// Creamos la aplicación Express
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// ───────────────────────────────────────────────────────────────
-// 2) Paths (resueltos una sola vez)
-// ───────────────────────────────────────────────────────────────
+// ============================================================
+// 2️⃣ MIDDLEWARES (cosas que Express hace con cada petición)
+// ============================================================
+
+// Permite recibir peticiones desde fuera (por ejemplo desde Meta)
+app.use(cors());
+
+// Permite procesar el cuerpo (body) de las peticiones JSON
+app.use(express.json());
+
+// ============================================================
+// 3️⃣ CONFIGURACIÓN DE CARPETAS
+// ============================================================
+
+// Conseguimos la ruta actual del archivo (por temas de ESModules)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const EXPORT_DIR = path.join(__dirname, "..", "exports");
-if (!fs.existsSync(EXPORT_DIR)) {
-  fs.mkdirSync(EXPORT_DIR, { recursive: true });
+// Creamos la carpeta "exports" si no existe (para los CSV)
+const exportPath = path.join(__dirname, "..", "exports");
+if (!fs.existsSync(exportPath)) {
+  fs.mkdirSync(exportPath, { recursive: true });
+  logInfo("📂 Carpeta /exports creada automáticamente");
 }
 
-// ───────────────────────────────────────────────────────────────
-// 3) App + Middlewares base
-// ───────────────────────────────────────────────────────────────
-export const app = express();
+// Hacemos pública la carpeta exports (para descargar los CSV)
+app.use("/exports", express.static(exportPath));
+app.set("EXPORT_DIR", exportPath); // para acceder a ella desde otras partes
 
-app.use(cors());
-app.use(express.json());
+// ============================================================
+// 4️⃣ RUTAS DEL SERVIDOR
+// ============================================================
 
-// estáticos públicos (CSV)
-app.use("/exports", express.static(EXPORT_DIR));
-// comparte la ruta con otros módulos (router)
-app.set("EXPORT_DIR", EXPORT_DIR);
-
-// Healthcheck ultra simple
+// Ruta principal → solo para comprobar si está vivo el servidor
 app.get("/", (_req, res) => {
   res.send("🚀 Bot de WhatsApp activo y funcionando!");
 });
 
-// ───────────────────────────────────────────────────────────────
-// 4) Rutas
-// ───────────────────────────────────────────────────────────────
+// Ruta del webhook → donde Meta manda los mensajes de WhatsApp
 app.use("/webhook", webhookRouter);
 
-// 404 (si nada respondió antes)
-app.use((req, res) => {
-  res.status(404).json({ error: "Not Found", path: req.originalUrl });
-});
+// ============================================================
+// 5️⃣ INICIO DEL SERVIDOR
+// ============================================================
 
-// Error handler (último middleware siempre)
-app.use((err, _req, res, _next) => {
-  logWarn(`❌ Error: ${err.message}`);
-  res.status(err.status || 500).json({ error: "Internal Server Error" });
-});
-
-// ───────────────────────────────────────────────────────────────
-// 5) Arranque del servidor (separado ⇒ test friendly)
-// ───────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== "test") {
-  app.listen(PORT, () => logInfo(`✅ Servidor en http://localhost:${PORT}`));
-}
+app.listen(PORT, () => logInfo(`✅ Servidor iniciado en http://localhost:${PORT}`));
