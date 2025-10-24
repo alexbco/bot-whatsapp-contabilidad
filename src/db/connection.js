@@ -2,26 +2,40 @@
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 import { logInfo } from "../utils/loger.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// Abrimos la BD en modo promesa
+// === Aseguramos que exista la carpeta /db incluso en Render ===
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dbPath = path.join(__dirname, "data.db");
+
+// Si no existe la carpeta, la crea
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+  logInfo("📂 Carpeta /db creada automáticamente");
+}
+
 const dbPromise = open({
-  filename: "./db/data.db",
+  filename: dbPath,
   driver: sqlite3.Database,
 });
 
-// Creamos la tabla 'movimientos' si no existe
+// Creamos la tabla al iniciar
 (async () => {
   const db = await dbPromise;
   await db.exec(`
     CREATE TABLE IF NOT EXISTS movimientos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,           -- ej: "24-10-25"
-      destino TEXT,         -- ej: "coche", "casa", "cliente X"
-      concepto TEXT,        -- ej: "gasolina repsol", "pintura garaje"
-      v_compra REAL,        -- valor bruto de compra
-      v_descuento REAL,     -- descuento aplicado
-      diferencia REAL,      -- v_compra - v_descuento (se calcula solo)
-      estado TEXT           -- ej: "pagado", "pendiente"
+      fecha TEXT,
+      destino TEXT,
+      concepto TEXT,
+      v_compra REAL,
+      v_descuento REAL,
+      diferencia REAL,
+      estado TEXT
     );
   `);
   logInfo("🗄️ Tabla 'movimientos' lista en SQLite");
