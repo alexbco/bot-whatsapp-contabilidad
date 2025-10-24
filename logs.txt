@@ -1,0 +1,5 @@
+[INFO] 2025-10-24T16:37:57.056Z 📂 Carpeta /exports creada automáticamente
+[INFO] 2025-10-24T16:37:57.068Z ✅ Servidor iniciado en http://localhost:3000
+[ERROR] 2025-10-24T16:40:36.119Z Webhook error → Request failed with status code 401
+[ERROR] 2025-10-24T16:45:07.982Z Webhook error → Request failed with status code 401
+[INFO] 2025-10-24T16:47:21.214Z ✅ Servidor iniciado en http://localhost:3000

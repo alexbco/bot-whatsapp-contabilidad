@@ -1,19 +1,30 @@
 // src/db/connection.js
-import Database from "better-sqlite3";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+import { logInfo } from "../utils/loger.js";
 
-const db = new Database("./data.db");
-db.pragma("journal_mode = WAL");
+// Abrimos la BD en modo promesa
+const dbPromise = open({
+  filename: "./db/data.db",
+  driver: sqlite3.Database,
+});
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS pagos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nombre TEXT NOT NULL,
-  cantidad_cents INTEGER NOT NULL,
-  fecha_iso TEXT NOT NULL,
-  remitente TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_pagos_fecha ON pagos(fecha_iso);
-CREATE INDEX IF NOT EXISTS idx_pagos_nombre ON pagos(nombre);
-`);
+// Creamos la tabla 'movimientos' si no existe
+(async () => {
+  const db = await dbPromise;
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS movimientos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fecha TEXT,           -- ej: "24-10-25"
+      destino TEXT,         -- ej: "coche", "casa", "cliente X"
+      concepto TEXT,        -- ej: "gasolina repsol", "pintura garaje"
+      v_compra REAL,        -- valor bruto de compra
+      v_descuento REAL,     -- descuento aplicado
+      diferencia REAL,      -- v_compra - v_descuento (se calcula solo)
+      estado TEXT           -- ej: "pagado", "pendiente"
+    );
+  `);
+  logInfo("🗄️ Tabla 'movimientos' lista en SQLite");
+})();
 
-export default db;
+export default dbPromise;
