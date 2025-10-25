@@ -1,3 +1,6 @@
+import express from "express";
+export const router = express.Router(); // 👈 esto es clave
+
 import {
   registrarGastoReventa,
   registrarServicioExtra,
@@ -11,28 +14,55 @@ import { formatExtractoWhatsApp } from "../utils/formatExtracto.js";
 import { getChuletaUso } from "../utils/chuleta.js";
 import { sendWhatsApp } from "../utils/helpers.js";
 
-// Esta función la llamas cuando recibes texto de WhatsApp:
+// =======================
+// POST /webhook (cuando Meta manda un mensaje nuevo)
+// =======================
+router.post("/", async (req, res) => {
+  try {
+    const entry = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const messageObj = value?.messages?.[0];
+
+    if (!messageObj) {
+      return res.sendStatus(200);
+    }
+
+    const fromNumber = messageObj.from;
+    const msgType = messageObj.type;
+
+    if (msgType === "text") {
+      const text = messageObj.text.body;
+      await handleTextoDeUsuario(fromNumber, text);
+    } else {
+      await sendWhatsApp(fromNumber, "📸 Recibí tu imagen. (Soporte de facturas próximamente)");
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Error en /webhook:", err);
+    res.sendStatus(500);
+  }
+});
+
+// =======================
+// Función que procesa texto recibido
+// =======================
 async function handleTextoDeUsuario(fromNumber, text) {
   const parsed = parseIncomingText(text);
 
-  // si pide ayuda directamente o no ha puesto nada útil
   if (parsed.action === "HELP") {
     await sendWhatsApp(fromNumber, getChuletaUso());
     return;
   }
 
-  // si no ha entendido el comando
   if (parsed.action === "UNKNOWN") {
     await sendWhatsApp(fromNumber, "No te he entendido.\n\n" + getChuletaUso());
     return;
   }
 
-  // si hay error de formato
   if (parsed.action === "ERROR") {
-    await sendWhatsApp(
-      fromNumber,
-      `❌ ${parsed.error}\n\n` + getChuletaUso()
-    );
+    await sendWhatsApp(fromNumber, `❌ ${parsed.error}\n\n` + getChuletaUso());
     return;
   }
 
@@ -135,7 +165,7 @@ async function handleTextoDeUsuario(fromNumber, text) {
 
       const info = getExtractoMensual({
         nombreClienteOAlias: clienteNombreOAlias,
-        mes, // "2025-09"
+        mes,
       });
 
       const resumenTxt = formatExtractoWhatsApp(info);
