@@ -54,27 +54,35 @@ export function rateLimit(from, windowMs = 1200) {
 // ==========================
 // 👋 Detección saludo rápido
 // ==========================
-export const isGreeting = (text) =>
-  /^(hola|buenas|hey|holi|holis|qué tal|que tal)\b/i.test(text);
-
-// ==========================
-// 🧠 Mensaje de bienvenida
-// ==========================
 export function saludoParaAntonio() {
-  return `¡Hola Antonio! 👋
-Soy tu bot de control de gastos.
+  return `👋 ¡Hola Antonio!
+Soy tu bot de control de gastos 💼
 
-Ejemplos:
-/addmov 24-10-25 coche gasolina_repsol 60 5 pagado
-/ultimos 5
-/find gasolina
-/total 10-25
-/export 10-25
+Puedes usarme con estos comandos:
 
-💡 Formato fecha: 24-10-25 (día-mes-año corto)
-💡 Formato mes: 10-25 (mes-año)
-`;
+🧾 GASTOS (materiales con descuento)
+  ➤ gasto avu abono cesped 187.50 90.50
+     (187.50 = lo que cobras al cliente / 90.50 = lo que te costó)
+
+🔧 SERVICIOS (mano de obra o trabajos extra)
+  ➤ servicio lo cortar setos 80
+
+🧹 LIMPIEZA (servicio de tu mujer)
+  ➤ limpieza maria ortega limpieza septiembre 49.50
+
+💶 PAGOS DE CLIENTES
+  ➤ paga lo 250
+
+📊 EXTRACTOS MENSUALES
+  ➤ extracto lo 2025-09
+
+💡 Consejo:
+- Puedes usar el nombre completo o las siglas del cliente (ej: lo, avu, fec…)
+- Si mando una factura después de registrar un gasto o limpieza, la guardaré automáticamente.
+
+Escribe "hola" o "ayuda" cuando quieras ver de nuevo esta lista ✅`;
 }
+
 
 // ==========================
 // 🔢 Helpers de formato
