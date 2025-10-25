@@ -208,8 +208,6 @@ export function registrarPagoCliente({ nombreCliente, aliasCliente, cantidad }) 
     saldo_actual_nuevo: cliente.saldo_actual + monto,
   };
 }
-// db/repository.js
-import db from "./connection.js";
 
 // Buscar cliente por nombre o alias (para extractos y tal)
 function findClienteByNombreOAlias(nombreOAlias) {
