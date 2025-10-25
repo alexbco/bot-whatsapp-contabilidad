@@ -1,102 +1,135 @@
-// db/repository.js
 import db from "./connection.js";
 
-// Util: asegura que el cliente existe y devuelve su fila
-export function getOrCreateCliente({ nombre, alias = null }) {
-  // 1. intentar buscar por nombre exacto
-  let row = db.prepare(`
-    SELECT * FROM clientes WHERE nombre = ?
-  `).get(nombre);
+// =======================
+// Helpers internos
+// =======================
 
-  // si no lo encuentra por nombre y nos pasan alias, intentar por alias
-  if (!row && alias) {
-    row = db.prepare(`
-      SELECT * FROM clientes WHERE alias = ?
-    `).get(alias);
+function getConfigValor(clave) {
+  const row = db.prepare(
+    `SELECT valor FROM meta_config WHERE clave = ?`
+  ).get(clave);
+  return row ? row.valor : null;
+}
+
+function setConfigValor(clave, valor) {
+  const existing = db.prepare(
+    `SELECT valor FROM meta_config WHERE clave = ?`
+  ).get(clave);
+
+  if (existing) {
+    db.prepare(
+      `UPDATE meta_config SET valor = ? WHERE clave = ?`
+    ).run(valor, clave);
+  } else {
+    db.prepare(
+      `INSERT INTO meta_config (clave, valor) VALUES (?, ?)`
+    ).run(clave, valor);
   }
+}
 
-  // si sigue sin existir, crearlo
+// Busca cliente por nombre (case-insensitive),
+// si no existe lo crea con saldo 0 y cuota_mensual 0
+export function getOrCreateCliente({ nombre }) {
+  let row = db
+    .prepare(`SELECT * FROM clientes WHERE lower(nombre)=lower(?)`)
+    .get(nombre);
+
   if (!row) {
-    const result = db.prepare(`
-      INSERT INTO clientes (nombre, alias, saldo_actual)
-      VALUES (?, ?, 0)
-    `).run(nombre, alias);
+    const result = db
+      .prepare(
+        `INSERT INTO clientes (nombre, saldo_actual, cuota_mensual)
+         VALUES (?, 0, 0)`
+      )
+      .run(nombre);
+
     row = {
       id: result.lastInsertRowid,
       nombre,
-      alias,
       saldo_actual: 0,
+      cuota_mensual: 0,
     };
   }
 
   return row;
 }
 
-// Util: actualiza saldo en clientes
-function actualizarSaldoCliente(clienteId, delta) {
-  db.prepare(`
-    UPDATE clientes
-    SET saldo_actual = saldo_actual + ?
-    WHERE id = ?
-  `).run(delta, clienteId);
+function findClienteByNombre(nombreBuscado) {
+  const row = db
+    .prepare(
+      `SELECT * FROM clientes WHERE lower(nombre)=lower(?)`
+    )
+    .get(nombreBuscado);
+  return row || null;
 }
 
-// Util: inserta un movimiento genérico
-function insertarMovimientoBase(mov) {
-  // mov = {fecha, mes, cliente_id, tipo, concepto,
-  //        precio_cliente, precio_coste, beneficio,
-  //        monto, factura_path, extra_json}
+function actualizarSaldoCliente(clienteId, delta) {
+  db.prepare(
+    `UPDATE clientes SET saldo_actual = saldo_actual + ? WHERE id = ?`
+  ).run(delta, clienteId);
+}
 
+function insertarMovimientoBase(mov) {
   const stmt = db.prepare(`
     INSERT INTO movimientos (
-      fecha, mes, cliente_id, tipo, concepto,
-      precio_cliente, precio_coste, beneficio,
-      monto, factura_path, extra_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      fecha,
+      mes,
+      cliente_id,
+      tipo,
+      concepto,
+      precio_cliente,
+      precio_coste,
+      beneficio,
+      monto,
+      factura_path
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
     mov.fecha,
     mov.mes,
-    mov.cliente_id ?? null,
+    mov.cliente_id,
     mov.tipo,
     mov.concepto,
     mov.precio_cliente ?? null,
     mov.precio_coste ?? null,
     mov.beneficio ?? null,
     mov.monto ?? null,
-    mov.factura_path ?? null,
-    mov.extra_json ? JSON.stringify(mov.extra_json) : null
+    mov.factura_path ?? null
   );
 
   return result.lastInsertRowid;
 }
 
-// === CASOS DE NEGOCIO ===
+// =======================
+// Movimiento: COMPRA
+// =======================
+export function registrarCompra({
+  nombreCliente,
+  concepto,
+  precioCliente,
+  precioCoste,
+  facturaPath = null,
+}) {
+  const cliente = getOrCreateCliente({ nombre: nombreCliente });
 
-// 1. Gasto con descuento (GASTO_REVENTA)
-export function registrarGastoReventa({ nombreCliente, aliasCliente, concepto, precioCliente, precioCoste }) {
-  const cliente = getOrCreateCliente({ nombre: nombreCliente, alias: aliasCliente });
-
-  const beneficio = (precioCliente - precioCoste);
-  const monto = -precioCliente; // el cliente ahora debe ese dinero
+  const beneficio = precioCliente - precioCoste;
+  const monto = -precioCliente;
 
   const now = new Date();
   const fechaISO = now.toISOString();
-  const mes = fechaISO.slice(0, 7); // "2025-10"
+  const mes = fechaISO.slice(0, 7);
 
   const movimientoId = insertarMovimientoBase({
     fecha: fechaISO,
     mes,
     cliente_id: cliente.id,
-    tipo: "GASTO_REVENTA",
+    tipo: "COMPRA",
     concepto,
     precio_cliente: precioCliente,
     precio_coste: precioCoste,
     beneficio,
     monto,
-    factura_path: null,
-    extra_json: null,
+    factura_path: facturaPath,
   });
 
   actualizarSaldoCliente(cliente.id, monto);
@@ -108,9 +141,11 @@ export function registrarGastoReventa({ nombreCliente, aliasCliente, concepto, p
   };
 }
 
-// 2. Servicio sin descuento (SERVICIO_EXTRA)
-export function registrarServicioExtra({ nombreCliente, aliasCliente, concepto, importe }) {
-  const cliente = getOrCreateCliente({ nombre: nombreCliente, alias: aliasCliente });
+// =======================
+// Movimiento: TRABAJOS
+// =======================
+export function registrarTrabajos({ nombreCliente, concepto, importe }) {
+  const cliente = getOrCreateCliente({ nombre: nombreCliente });
 
   const beneficio = importe;
   const monto = -importe;
@@ -123,14 +158,13 @@ export function registrarServicioExtra({ nombreCliente, aliasCliente, concepto, 
     fecha: fechaISO,
     mes,
     cliente_id: cliente.id,
-    tipo: "SERVICIO_EXTRA",
+    tipo: "TRABAJOS",
     concepto,
     precio_cliente: importe,
     precio_coste: null,
     beneficio,
     monto,
     factura_path: null,
-    extra_json: null,
   });
 
   actualizarSaldoCliente(cliente.id, monto);
@@ -142,12 +176,20 @@ export function registrarServicioExtra({ nombreCliente, aliasCliente, concepto, 
   };
 }
 
-// 3. Limpieza (LIMPIEZA)
-export function registrarLimpieza({ nombreCliente, aliasCliente, concepto, totalCobrado }) {
-  const cliente = getOrCreateCliente({ nombre: nombreCliente, alias: aliasCliente });
+// =======================
+// Movimiento: MARI
+// =======================
+export function registrarMari({
+  nombreCliente,
+  concepto,
+  totalCobrado,
+  costeProductos,
+  facturaPath = null,
+}) {
+  const cliente = getOrCreateCliente({ nombre: nombreCliente });
 
-  const beneficio = totalCobrado; // todo lo que se cobra es beneficio
-  const monto = -totalCobrado;    // el cliente debe eso
+  const beneficio = totalCobrado - costeProductos;
+  const monto = -totalCobrado;
 
   const now = new Date();
   const fechaISO = now.toISOString();
@@ -157,14 +199,13 @@ export function registrarLimpieza({ nombreCliente, aliasCliente, concepto, total
     fecha: fechaISO,
     mes,
     cliente_id: cliente.id,
-    tipo: "LIMPIEZA",
+    tipo: "MARI",
     concepto,
     precio_cliente: totalCobrado,
-    precio_coste: 0,
+    precio_coste: costeProductos,
     beneficio,
     monto,
-    factura_path: null,
-    extra_json: null, // ya no necesitamos horas ni productos
+    factura_path: facturaPath,
   });
 
   actualizarSaldoCliente(cliente.id, monto);
@@ -176,12 +217,110 @@ export function registrarLimpieza({ nombreCliente, aliasCliente, concepto, total
   };
 }
 
+// =======================
+// Movimiento: MENSUALIDAD
+// =======================
 
-// 4. Pago del cliente (PAGO_CLIENTE)
-export function registrarPagoCliente({ nombreCliente, aliasCliente, cantidad }) {
-  const cliente = getOrCreateCliente({ nombre: nombreCliente, alias: aliasCliente });
+// Aplica UNA mensualidad a UN cliente (resta su cuota fija al saldo)
+export function registrarMensualidadCliente({ nombreCliente, fechaForzada = null }) {
+  const cliente = getOrCreateCliente({ nombre: nombreCliente });
 
-  const monto = cantidad; // pago reduce deuda -> monto positivo
+  const cuota = cliente.cuota_mensual || 0;
+  if (!cuota || cuota <= 0) {
+    return {
+      ok: false,
+      msg: `El cliente ${nombreCliente} no tiene cuota mensual configurada`,
+    };
+  }
+
+  // Fecha del movimiento: día 25 del mes actual (o del mes de fechaForzada)
+  const baseDate = fechaForzada ? new Date(fechaForzada) : new Date();
+
+  const fechaMovimiento = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    25,
+    12,
+    0,
+    0,
+    0
+  );
+  const fechaISO = fechaMovimiento.toISOString();
+  const mes = fechaISO.slice(0, 7); // "2025-10"
+
+  const concepto = `mantenimiento ${mes}`;
+  const monto = -cuota;        // aumenta deuda
+  const beneficio = cuota;     // todo esto es ingreso de servicio mensual
+
+  const movimientoId = insertarMovimientoBase({
+    fecha: fechaISO,
+    mes,
+    cliente_id: cliente.id,
+    tipo: "MENSUALIDAD",
+    concepto,
+    precio_cliente: cuota,
+    precio_coste: null,
+    beneficio,
+    monto,
+    factura_path: null,
+  });
+
+  actualizarSaldoCliente(cliente.id, monto);
+
+  return {
+    ok: true,
+    movimientoId,
+    saldo_actual_nuevo: cliente.saldo_actual + monto,
+    cuota_aplicada: cuota,
+  };
+}
+
+// Lógica que mete mensualidad A TODOS los clientes si toca (día 25) y si no se ha hecho este mes
+export function aplicarMensualidadDelMesActual() {
+  const ahora = new Date();
+  const dia = ahora.getDate(); // 1..31
+  if (dia !== 25) {
+    return { ok: false, msg: "No es día 25, no aplico mensualidad." };
+  }
+
+  const mesActual = ahora.toISOString().slice(0, 7); // "2025-10"
+  const ultimaAplicada = getConfigValor("mensualidad_ultima_aplicada");
+
+  // si ya hicimos este mes, no repetir
+  if (ultimaAplicada === mesActual) {
+    return { ok: false, msg: "Mensualidad ya aplicada este mes." };
+  }
+
+  // Sacar todos los clientes con cuota_mensual > 0
+  const clientesConCuota = db
+    .prepare(
+      `SELECT * FROM clientes WHERE cuota_mensual > 0`
+    )
+    .all();
+
+  for (const cli of clientesConCuota) {
+    registrarMensualidadCliente({
+      nombreCliente: cli.nombre,
+      // podemos forzar la misma fecha base "ahora"
+      fechaForzada: ahora.toISOString(),
+    });
+  }
+
+  // Guardamos que este mes ya está aplicado
+  setConfigValor("mensualidad_ultima_aplicada", mesActual);
+
+  return {
+    ok: true,
+    msg: `Mensualidad aplicada a ${clientesConCuota.length} clientes para ${mesActual}`,
+  };
+}
+
+// =======================
+// Movimiento: PAGO_CLIENTE
+// =======================
+export function registrarPagoCliente({ nombreCliente, cantidad }) {
+  const cliente = getOrCreateCliente({ nombre: nombreCliente });
+  const monto = cantidad; // pago = reduce deuda
 
   const now = new Date();
   const fechaISO = now.toISOString();
@@ -198,7 +337,6 @@ export function registrarPagoCliente({ nombreCliente, aliasCliente, cantidad }) 
     beneficio: null,
     monto,
     factura_path: null,
-    extra_json: null,
   });
 
   actualizarSaldoCliente(cliente.id, monto);
@@ -209,30 +347,15 @@ export function registrarPagoCliente({ nombreCliente, aliasCliente, cantidad }) 
   };
 }
 
-// Buscar cliente por nombre o alias (para extractos y tal)
-function findClienteByNombreOAlias(nombreOAlias) {
-  const row = db.prepare(
-    `
-    SELECT * FROM clientes
-    WHERE lower(nombre) = lower(?)
-       OR lower(alias) = lower(?)
-    `
-  ).get(nombreOAlias, nombreOAlias);
-
-  return row || null;
-}
-
-// Devuelve movimientos de un cliente en un mes concreto ("2025-09")
-export function getExtractoMensual({ nombreClienteOAlias, mes }) {
-  const cliente = findClienteByNombreOAlias(nombreClienteOAlias);
+// =======================
+// Extracto
+// =======================
+export function getExtractoMensual({ nombreCliente, mes }) {
+  const cliente = findClienteByNombre(nombreCliente);
   if (!cliente) {
-    return {
-      ok: false,
-      error: `No existe el cliente "${nombreClienteOAlias}".`,
-    };
+    return { ok: false, error: `No existe el cliente "${nombreCliente}".` };
   }
 
-  // Todos los movimientos de ese mes
   const movimientos = db
     .prepare(
       `
@@ -250,51 +373,37 @@ export function getExtractoMensual({ nombreClienteOAlias, mes }) {
       WHERE cliente_id = ?
         AND mes = ?
       ORDER BY fecha ASC
-      `
+    `
     )
     .all(cliente.id, mes);
 
-  // Calcular totales útiles para el extracto
-
-  let totalFacturadoEseMes = 0; // suma de lo que se le ha cobrado (precioCliente) en trabajos/gastos/limpieza
-  let totalPagosEseMes = 0;     // suma de pagos recibidos del cliente
-  let beneficioBrutoMes = 0;    // suma de beneficios (lo que gana tu padre/madre)
+  let totalFacturadoEseMes = 0;
+  let totalPagosEseMes = 0;
+  let beneficioBrutoMes = 0;
+  let beneficioSoloComprasMes = 0;
 
   movimientos.forEach((m) => {
     if (m.tipo === "PAGO_CLIENTE") {
-      // pago del cliente → monto es positivo y reduce deuda
       totalPagosEseMes += m.monto || 0;
     } else {
-      // servicios, limpieza, gasto reventa → lo que el cliente debe pagar
       totalFacturadoEseMes += m.precioCliente || 0;
       beneficioBrutoMes += m.beneficio || 0;
+
+      if (m.tipo === "COMPRA") {
+        beneficioSoloComprasMes += m.beneficio || 0;
+      }
     }
   });
 
-  // El saldo_actual del cliente ahora (vivo hoy)
-  const saldoActual = db
-    .prepare(
-      `
-      SELECT saldo_actual AS saldoActual
-      FROM clientes
-      WHERE id = ?
-      `
-    )
-    .get(cliente.id).saldoActual;
-
-  // También calculamos saldo al cierre del mes
-  // Truco: sumamos todos los movimientos DEL CLIENTE con fecha <= último día de ese mes
-  // Nota: Para no liar fechas aún, primer MVP: saldoActual es lo que vamos a mostrar.
-  // (si tu padre quiere "saldo a final de septiembre" exacto-histórico, luego afinamos
-  // con una query por rango de fechas; ahora no lo complico porque aún estamos montando el flujo).
+  const saldoActual = cliente.saldo_actual;
 
   return {
     ok: true,
     cliente: {
       id: cliente.id,
       nombre: cliente.nombre,
-      alias: cliente.alias,
       saldoActual,
+      cuotaMensual: cliente.cuota_mensual,
     },
     mes,
     movimientos,
@@ -302,6 +411,7 @@ export function getExtractoMensual({ nombreClienteOAlias, mes }) {
       totalFacturadoEseMes,
       totalPagosEseMes,
       beneficioBrutoMes,
+      beneficioSoloComprasMes,
     },
   };
 }

@@ -1,111 +1,97 @@
-// src/utils/parser.js
-
 function normalizaTexto(str) {
-  return str
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+  return str.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-// Intenta separar "primerToken resto..."
-function splitFirst(str) {
-  const firstSpace = str.indexOf(" ");
-  if (firstSpace === -1) return [str, ""];
-  return [str.slice(0, firstSpace), str.slice(firstSpace + 1)];
+// toma las 2 primeras palabras como "nombre apellido"
+function takeWords(str, n) {
+  const parts = str.split(" ");
+  const head = parts.slice(0, n).join(" ");
+  const tail = parts.slice(n).join(" ");
+  return [head, tail];
 }
 
-/**
- * Parseo de comandos:
- *
- * gasto <cliente> <concepto ...> <precioCliente> <precioCoste>
- * ej: "gasto avu 2 sacos de abono 187.50 90.50"
- *
- * servicio <cliente> <concepto ...> <importe>
- * ej: "servicio lo cortar setos 80"
- *
- * limpieza <cliente> <concepto ...> <importe>
- * ej: "limpieza maria ortega limpieza septiembre 49.50"
- *
- * paga <cliente> <cantidad>
- * ej: "paga lo 250"
- *
- * extracto <cliente> <mes>
- * ej: "extracto lo 2025-09"
- */
+function toNumber(str) {
+  if (!str) return NaN;
+  return parseFloat(str.replace(",", "."));
+}
 
 export function parseIncomingText(msgRaw) {
   const msg = normalizaTexto(msgRaw);
 
-  // 1) Sacamos el comando principal (gasto | servicio | limpieza | paga | extracto)
-  const [cmd, restAfterCmd] = splitFirst(msg);
-
-  if (!restAfterCmd) {
-    return { action: "UNKNOWN", error: "Falta información después del comando." };
+  // primer token = comando
+  const firstSpace = msg.indexOf(" ");
+  let cmd, restAfterCmd;
+  if (firstSpace === -1) {
+    cmd = msg;
+    restAfterCmd = "";
+  } else {
+    cmd = msg.slice(0, firstSpace);
+    restAfterCmd = msg.slice(firstSpace + 1);
   }
 
-  // según comando
+  if (
+    cmd === "hola" ||
+    cmd === "ayuda" ||
+    cmd === "help"
+  ) {
+    return { action: "HELP" };
+  }
+
+  if (!restAfterCmd) {
+    return { action: "HELP" };
+  }
+
   switch (cmd) {
-    case "gasto":
-      return parseGasto(restAfterCmd);
+    case "compra":
+      return parseCompra(restAfterCmd);
 
-    case "servicio":
-      return parseServicio(restAfterCmd);
+    case "trabajos":
+      return parseTrabajos(restAfterCmd);
 
-    case "limpieza":
-      return parseLimpieza(restAfterCmd);
+    case "mari":
+      return parseMari(restAfterCmd);
 
     case "paga":
-    case "pago": // por si dice "pago pepe 150"
+    case "pago":
       return parsePago(restAfterCmd);
 
     case "extracto":
       return parseExtracto(restAfterCmd);
 
     default:
-      return { action: "UNKNOWN", error: "Comando no reconocido." };
+      return { action: "UNKNOWN" };
   }
 }
 
-// ---------- Helpers de parseo específicos ----------
-
-// gasto <cliente> <concepto ...> <precioCliente> <precioCoste>
-function parseGasto(rest) {
-  // ejemplo rest:
-  // "avu 2 sacos de abono 187.50 90.50"
-  //
-  // estrategia:
-  // 1. primer token = cliente/alias
-  // 2. lo demás => ultimo 2 tokens son numeros => precioCliente y precioCoste
-  //    lo anterior = concepto
-
-  const [clienteToken, resto] = splitFirst(rest);
-  if (!resto) {
-    return { action: "ERROR", error: "Faltan datos del gasto." };
-  }
+// compra <nombre> <apellido> <concepto...> <precioCliente> <precioCoste>
+function parseCompra(rest) {
+  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
 
   const parts = resto.split(" ");
   if (parts.length < 3) {
-    return { action: "ERROR", error: "Formato gasto incorrecto." };
+    return {
+      action: "ERROR",
+      error:
+        "Formato compra: compra <nombre> <apellido> <concepto> <precioCliente> <precioCoste>",
+    };
   }
 
-  // Sacar los últimos 2 números
   const precioClienteStr = parts[parts.length - 2];
   const precioCosteStr = parts[parts.length - 1];
 
-  const precioCliente = parseFloat(precioClienteStr.replace(",", "."));
-  const precioCoste = parseFloat(precioCosteStr.replace(",", "."));
+  const precioCliente = toNumber(precioClienteStr);
+  const precioCoste = toNumber(precioCosteStr);
 
   if (Number.isNaN(precioCliente) || Number.isNaN(precioCoste)) {
-    return { action: "ERROR", error: "Importes no válidos en gasto." };
+    return { action: "ERROR", error: "Importes no válidos en compra." };
   }
 
-  // concepto = todo menos los dos últimos tokens numéricos
   const concepto = parts.slice(0, parts.length - 2).join(" ");
 
   return {
-    action: "GASTO_REVENTA",
+    action: "COMPRA",
     data: {
-      clienteNombreOAlias: clienteToken,
+      clienteNombreCompleto,
       concepto,
       precioCliente,
       precioCoste,
@@ -113,109 +99,128 @@ function parseGasto(rest) {
   };
 }
 
-// servicio <cliente> <concepto ...> <importe>
-function parseServicio(rest) {
-  // "lo cortar setos 80"
-  const [clienteToken, resto] = splitFirst(rest);
-  if (!resto) return { action: "ERROR", error: "Faltan datos del servicio." };
+// trabajos <nombre> <apellido> <concepto...> <importe>
+function parseTrabajos(rest) {
+  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
 
   const parts = resto.split(" ");
   if (parts.length < 2) {
-    return { action: "ERROR", error: "Formato servicio incorrecto." };
+    return {
+      action: "ERROR",
+      error:
+        "Formato trabajos: trabajos <nombre> <apellido> <concepto> <importe>",
+    };
   }
 
   const importeStr = parts[parts.length - 1];
-  const importe = parseFloat(importeStr.replace(",", "."));
+  const importe = toNumber(importeStr);
   if (Number.isNaN(importe)) {
-    return { action: "ERROR", error: "Importe no válido en servicio." };
+    return { action: "ERROR", error: "Importe no válido en trabajos." };
   }
 
   const concepto = parts.slice(0, parts.length - 1).join(" ");
 
   return {
-    action: "SERVICIO_EXTRA",
+    action: "TRABAJOS",
     data: {
-      clienteNombreOAlias: clienteToken,
+      clienteNombreCompleto,
       concepto,
       importe,
     },
   };
 }
 
-// limpieza <cliente> <concepto ...> <importe>
-function parseLimpieza(rest) {
-  // "maria ortega limpieza septiembre 49.50"
-  //
-  // ojo: el nombre del cliente puede ser más de una palabra
-  // estrategia:
-  // 1. vamos a intentar detectar el último token como importe
-  // 2. lo de antes lo partimos así:
-  //    asumimos que el nombre del cliente son las primeras 1 o 2 palabras
-  //    -> para la primera versión vamos a suponer que el nombre del cliente es UNA palabra.
-  //    si luego quieres soportar nombre con espacios, lo ampliamos.
-
-  // versión 1 (simple): igual que servicio
-  const [clienteToken, resto] = splitFirst(rest);
-  if (!resto) return { action: "ERROR", error: "Faltan datos de limpieza." };
+// mari <nombre> <apellido> <concepto...> <totalCobrado> [costeProductos]
+function parseMari(rest) {
+  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
 
   const parts = resto.split(" ");
   if (parts.length < 2) {
-    return { action: "ERROR", error: "Formato limpieza incorrecto." };
+    return {
+      action: "ERROR",
+      error:
+        "Formato mari: mari <nombre> <apellido> <concepto> <totalCobrado> [costeProductos]",
+    };
   }
 
-  const totalCobradoStr = parts[parts.length - 1];
-  const totalCobrado = parseFloat(totalCobradoStr.replace(",", "."));
-  if (Number.isNaN(totalCobrado)) {
-    return { action: "ERROR", error: "Importe no válido en limpieza." };
-  }
+  const last = parts[parts.length - 1];
+  const secondLast = parts[parts.length - 2];
 
-  const concepto = parts.slice(0, parts.length - 1).join(" ");
+  const lastNum = toNumber(last);
+  const secondLastNum = toNumber(secondLast);
+
+  let totalCobrado;
+  let costeProductos;
+  let concepto;
+
+  if (!Number.isNaN(lastNum) && !Number.isNaN(secondLastNum) && parts.length >= 3) {
+    // caso con dos importes (ej: 58.65 9.15)
+    totalCobrado = secondLastNum;
+    costeProductos = lastNum;
+    concepto = parts.slice(0, parts.length - 2).join(" ");
+  } else if (!Number.isNaN(lastNum)) {
+    // caso con un solo importe (ej: 49.50)
+    totalCobrado = lastNum;
+    costeProductos = 0;
+    concepto = parts.slice(0, parts.length - 1).join(" ");
+  } else {
+    return {
+      action: "ERROR",
+      error:
+        "Importes no válidos en mari. Ej: mari maria ortega limpieza sept 58.65 9.15",
+    };
+  }
 
   return {
-    action: "LIMPIEZA",
+    action: "MARI",
     data: {
-      clienteNombreOAlias: clienteToken,
+      clienteNombreCompleto,
       concepto,
       totalCobrado,
+      costeProductos,
     },
   };
 }
 
-// paga <cliente> <cantidad>
+// paga <nombre> <apellido> <cantidad>
 function parsePago(rest) {
-  // "lo 250"
-  const [clienteToken, cantidadStr] = splitFirst(rest);
-  const cantidad = parseFloat(cantidadStr?.replace(",", "."));
-  if (!clienteToken || Number.isNaN(cantidad)) {
-    return { action: "ERROR", error: "Formato pago incorrecto." };
+  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
+
+  const cantidad = toNumber(resto);
+  if (!clienteNombreCompleto || Number.isNaN(cantidad)) {
+    return {
+      action: "ERROR",
+      error: "Formato paga: paga <nombre> <apellido> <cantidad>",
+    };
   }
 
   return {
     action: "PAGO_CLIENTE",
     data: {
-      clienteNombreOAlias: clienteToken,
+      clienteNombreCompleto,
       cantidad,
     },
   };
 }
 
-// extracto <cliente> <mes>
+// extracto <nombre> <apellido> <yyyy-mm>
 function parseExtracto(rest) {
-  // "lo 2025-09"
-  const [clienteToken, mes] = splitFirst(rest);
+  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
 
-  if (!clienteToken || !mes || !/^\d{4}-\d{2}$/.test(mes)) {
+  const mes = resto.trim(); // "2025-10"
+  if (!clienteNombreCompleto || !mes || !/^\d{4}-\d{2}$/.test(mes)) {
     return {
       action: "ERROR",
-      error: "Formato extracto incorrecto. Usa: extracto pepe 2025-09",
+      error:
+        "Formato extracto: extracto <nombre> <apellido> <2025-10>",
     };
   }
 
   return {
     action: "EXTRACTO",
     data: {
-      clienteNombreOAlias: clienteToken,
-      mes, // "2025-09"
+      clienteNombreCompleto,
+      mes,
     },
   };
 }

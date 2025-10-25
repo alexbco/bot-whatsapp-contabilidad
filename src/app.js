@@ -6,8 +6,9 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import "./db/connection.js"; // inicializa SQLite y crea tabla si no existe
+import "./db/connection.js"; // inicializa SQLite y crea tablas si no existen
 import { router as webhookRouter } from "./routes/webhook.js";
+import { aplicarMensualidadDelMesActual } from "./db/repository.js";
 import { logInfo, logWarn } from "./utils/loger.js";
 
 // ========================
@@ -56,8 +57,24 @@ app.get("/", (_req, res) => {
 app.use("/webhook", webhookRouter);
 
 // ========================
-// 4) ARRANQUE SERVER
+// 4) CRON INTERNO (día 25)
+// ========================
+// cada hora comprobamos si hay que aplicar mensualidad
+setInterval(() => {
+  try {
+    const resultado = aplicarMensualidadDelMesActual();
+    if (resultado?.ok) {
+      logInfo(`💸 ${resultado.msg}`);
+    }
+  } catch (err) {
+    console.error("❌ Error en la tarea automática de mensualidades:", err);
+  }
+}, 1000 * 60 * 60); // cada 1 hora
+
+// ========================
+// 5) ARRANQUE SERVER
 // ========================
 app.listen(PORT, () => {
   logInfo(`✅ Servidor iniciado en http://localhost:${PORT}`);
+  logInfo("⏰ Cron interno activo: revisará mensualidades cada hora.");
 });

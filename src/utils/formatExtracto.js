@@ -45,39 +45,40 @@ function formatLineas(movs) {
     .join("\n");
 }
 
-export function formatExtractoWhatsApp(data) {
-  // data = { ok, cliente, mes, movimientos, resumen }
+export function formatExtractoWhatsApp(datos) {
+  // asumo que 'datos' trae estos campos:
+  // datos.totalMaterial
+  // datos.totalServicio
+  // datos.totalPagos
+  // datos.movimientos (lista con detalle)
 
-  if (!data.ok) {
-    return `❌ ${data.error || "No se pudo generar el extracto."}`;
-  }
+  const totalFacturado = datos.totalMaterial + datos.totalServicio;
 
-  const nombreCliente = data.cliente.nombre || data.cliente.alias;
-  const mes = data.mes;
-  const saldoActual = data.cliente.saldoActual;
+  // 👇 NUEVA LÓGICA
+  const beneficioBruto = totalFacturado;
 
-  const {
-    totalFacturadoEseMes,
-    totalPagosEseMes,
-    beneficioBrutoMes,
-  } = data.resumen;
+  const saldoPendiente = datos.totalPagos - totalFacturado;
 
-  const bloqueMovs = formatLineas(data.movimientos);
+  // ahora montas el texto final:
+  let detalleLines = datos.movimientos.map(mov => {
+    // ej: "• 2025-10-25 | Material | abono cesped | 187.50€"
+    return `• ${mov.fecha} | ${mov.tipo} | ${mov.concepto} | ${mov.importe.toFixed(2)}€`;
+  });
 
-  // Construimos el mensaje final
-  return [
-    `📆 Extracto ${mes}`,
-    `Cliente: ${nombreCliente}`,
-    ``,
-    `DETALLE:`,
-    bloqueMovs,
-    ``,
-    `RESUMEN DEL MES:`,
-    `  Facturado este mes: ${eur(totalFacturadoEseMes)}`,
-    `  Pagos recibidos:    ${eur(totalPagosEseMes)}`,
-    `  Beneficio bruto:    ${eur(beneficioBrutoMes)}`,
-    ``,
-    `SALDO PENDIENTE A DÍA DE HOY:`,
-    `  ${eur(saldoActual)}  (negativo = te queda por pagarme / positivo = tienes saldo a favor)`,
-  ].join("\n");
+  return (
+`📅 Extracto ${datos.mes}
+Cliente: ${datos.cliente}
+
+DETALLE:
+${detalleLines.join("\n")}
+
+RESUMEN DEL MES:
+Facturado este mes: ${totalFacturado.toFixed(2)}€
+Pagos recibidos:   ${datos.totalPagos.toFixed(2)}€
+Beneficio bruto:   ${beneficioBruto.toFixed(2)}€
+
+SALDO PENDIENTE A DÍA DE HOY:
+${saldoPendiente.toFixed(2)}€ 
+(negativo = te queda por pagarte / positivo = tiene saldo a favor)`
+  );
 }

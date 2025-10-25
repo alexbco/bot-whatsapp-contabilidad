@@ -3,3 +3,9 @@
 [ERROR] 2025-10-24T16:40:36.119Z Webhook error → Request failed with status code 401
 [ERROR] 2025-10-24T16:45:07.982Z Webhook error → Request failed with status code 401
 [INFO] 2025-10-24T16:47:21.214Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-25T15:26:13.783Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-25T15:29:50.361Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-25T16:41:24.612Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-25T16:46:16.881Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-25T17:02:07.304Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-25T17:02:07.306Z ⏰ Cron interno activo: revisará mensualidades cada hora.
