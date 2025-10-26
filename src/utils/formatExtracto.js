@@ -36,8 +36,9 @@ function renderLineaMovimiento(m) {
   } else {
     importeVisible = m.precioCliente ?? null;
   }
+  const tieneFactura = m.facturaPath ? "📸" : "";
 
-  return `• ${fechaCorta} | ${etiquetaTipo(m.tipo)} | ${m.concepto} | ${eur(importeVisible)}`;
+  return `• ${fechaCorta} | ${etiquetaTipo(m.tipo)} | ${m.concepto} ${tieneFactura} | ${eur(importeVisible)}`;
 }
 
 export function formatExtractoWhatsApp(data) {

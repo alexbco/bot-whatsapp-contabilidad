@@ -1,24 +1,55 @@
-function normalizaTexto(str) {
+// src/utils/parser.js
+
+function norm(str) {
   return str.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-// toma las 2 primeras palabras como "nombre apellido"
-function takeWords(str, n) {
-  const parts = str.split(" ");
-  const head = parts.slice(0, n).join(" ");
-  const tail = parts.slice(n).join(" ");
-  return [head, tail];
+// separa las 2 primeras palabras como "nombre apellido"
+function splitNombre(rest) {
+  const parts = rest.split(" ");
+  const nombreCompleto = [parts[0], parts[1]].join(" ");
+  const resto = parts.slice(2).join(" ");
+  return [nombreCompleto, resto];
 }
 
-function toNumber(str) {
-  if (!str) return NaN;
-  return parseFloat(str.replace(",", "."));
+// convierte "187,50" o "187.50" → Number(187.50)
+function toNumber(numStr) {
+  if (!numStr) return NaN;
+  const normalized = numStr.replace(",", ".");
+  return parseFloat(normalized);
 }
 
-export function parseIncomingText(msgRaw) {
-  const msg = normalizaTexto(msgRaw);
+export function parseIncomingText(rawMessage) {
+  const msg = norm(rawMessage);
 
-  // primer token = comando
+  // 1. confirmaciones
+  if (["si", "sí", "vale", "ok", "confirmo", "correcto"].includes(msg)) {
+    return { action: "CONFIRMAR" };
+  }
+  if (["no", "nanai", "cancela", "cancelar"].includes(msg)) {
+    return { action: "CANCELAR" };
+  }
+
+  // 2. ayuda / hola
+  if (
+    msg === "ayuda" ||
+    msg === "help" ||
+    msg === "ayudame" ||
+    msg === "ayúdame"
+  ) {
+    return { action: "AYUDA" };
+  }
+
+  if (
+    msg === "hola" ||
+    msg === "buenas" ||
+    msg === "que tal" ||
+    msg === "qué tal"
+  ) {
+    return { action: "SALUDO" };
+  }
+
+  // 3. parse comando principal
   const firstSpace = msg.indexOf(" ");
   let cmd, restAfterCmd;
   if (firstSpace === -1) {
@@ -27,18 +58,6 @@ export function parseIncomingText(msgRaw) {
   } else {
     cmd = msg.slice(0, firstSpace);
     restAfterCmd = msg.slice(firstSpace + 1);
-  }
-
-  if (
-    cmd === "hola" ||
-    cmd === "ayuda" ||
-    cmd === "help"
-  ) {
-    return { action: "HELP" };
-  }
-
-  if (!restAfterCmd) {
-    return { action: "HELP" };
   }
 
   switch (cmd) {
@@ -65,9 +84,9 @@ export function parseIncomingText(msgRaw) {
 
 // compra <nombre> <apellido> <concepto...> <precioCliente> <precioCoste>
 function parseCompra(rest) {
-  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
-
+  const [clienteNombreCompleto, resto] = splitNombre(rest);
   const parts = resto.split(" ");
+
   if (parts.length < 3) {
     return {
       action: "ERROR",
@@ -101,9 +120,9 @@ function parseCompra(rest) {
 
 // trabajos <nombre> <apellido> <concepto...> <importe>
 function parseTrabajos(rest) {
-  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
-
+  const [clienteNombreCompleto, resto] = splitNombre(rest);
   const parts = resto.split(" ");
+
   if (parts.length < 2) {
     return {
       action: "ERROR",
@@ -132,9 +151,9 @@ function parseTrabajos(rest) {
 
 // mari <nombre> <apellido> <concepto...> <totalCobrado> [costeProductos]
 function parseMari(rest) {
-  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
-
+  const [clienteNombreCompleto, resto] = splitNombre(rest);
   const parts = resto.split(" ");
+
   if (parts.length < 2) {
     return {
       action: "ERROR",
@@ -146,20 +165,24 @@ function parseMari(rest) {
   const last = parts[parts.length - 1];
   const secondLast = parts[parts.length - 2];
 
-  const lastNum = toNumber(last);
+  const lastNum = toNumber(last); // puede ser totalCobrado O costeProductos
   const secondLastNum = toNumber(secondLast);
 
   let totalCobrado;
   let costeProductos;
   let concepto;
 
-  if (!Number.isNaN(lastNum) && !Number.isNaN(secondLastNum) && parts.length >= 3) {
-    // caso con dos importes (ej: 58.65 9.15)
+  // Caso con dos importes: "58,65 9,15"
+  if (
+    !Number.isNaN(lastNum) &&
+    !Number.isNaN(secondLastNum) &&
+    parts.length >= 3
+  ) {
     totalCobrado = secondLastNum;
     costeProductos = lastNum;
     concepto = parts.slice(0, parts.length - 2).join(" ");
   } else if (!Number.isNaN(lastNum)) {
-    // caso con un solo importe (ej: 49.50)
+    // Caso con un solo importe: "49,50"
     totalCobrado = lastNum;
     costeProductos = 0;
     concepto = parts.slice(0, parts.length - 1).join(" ");
@@ -167,7 +190,7 @@ function parseMari(rest) {
     return {
       action: "ERROR",
       error:
-        "Importes no válidos en mari. Ej: mari maria ortega limpieza sept 58.65 9.15",
+        "Importes no válidos en mari. Ej: mari antonio vargas limpieza septiembre 58,65 9,15",
     };
   }
 
@@ -184,7 +207,7 @@ function parseMari(rest) {
 
 // paga <nombre> <apellido> <cantidad>
 function parsePago(rest) {
-  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
+  const [clienteNombreCompleto, resto] = splitNombre(rest);
 
   const cantidad = toNumber(resto);
   if (!clienteNombreCompleto || Number.isNaN(cantidad)) {
@@ -205,7 +228,7 @@ function parsePago(rest) {
 
 // extracto <nombre> <apellido> <yyyy-mm>
 function parseExtracto(rest) {
-  let [clienteNombreCompleto, resto] = takeWords(rest, 2);
+  const [clienteNombreCompleto, resto] = splitNombre(rest);
 
   const mes = resto.trim(); // "2025-10"
   if (!clienteNombreCompleto || !mes || !/^\d{4}-\d{2}$/.test(mes)) {

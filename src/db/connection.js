@@ -8,7 +8,8 @@ db.prepare(`
 CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre TEXT NOT NULL UNIQUE,
-    saldo_actual REAL NOT NULL DEFAULT 0
+    saldo_actual REAL NOT NULL DEFAULT 0,
+    sueldo_mensual REAL DEFAULT 0
 );
 `).run();
 

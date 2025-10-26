@@ -10,6 +10,7 @@ import "./db/connection.js"; // inicializa SQLite y crea tablas si no existen
 import { router as webhookRouter } from "./routes/webhook.js";
 import { aplicarMensualidadDelMesActual } from "./db/repository.js";
 import { logInfo, logWarn } from "./utils/loger.js";
+import { aplicarSueldoMensualAutomatico } from "./db/repository.js";
 
 // ========================
 // 1) CONFIG ENV, APP BASE
@@ -61,15 +62,8 @@ app.use("/webhook", webhookRouter);
 // ========================
 // cada hora comprobamos si hay que aplicar mensualidad
 setInterval(() => {
-  try {
-    const resultado = aplicarMensualidadDelMesActual();
-    if (resultado?.ok) {
-      logInfo(`💸 ${resultado.msg}`);
-    }
-  } catch (err) {
-    console.error("❌ Error en la tarea automática de mensualidades:", err);
-  }
-}, 1000 * 60 * 60); // cada 1 hora
+  aplicarSueldoMensualAutomatico();
+}, 60 * 60 * 1000); // cada hora
 
 // ========================
 // 5) ARRANQUE SERVER

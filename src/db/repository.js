@@ -1,4 +1,5 @@
 import db from "./connection.js";
+import { logInfo } from "../utils/loger.js";
 
 // =======================
 // Helpers internos
@@ -414,4 +415,75 @@ export function getExtractoMensual({ nombreCliente, mes }) {
       beneficioSoloComprasMes,
     },
   };
+}
+export function aplicarSueldoMensualAutomatico() {
+  const hoy = new Date();
+  const dia = hoy.getDate();
+  const mes = hoy.getMonth() + 1; // 1-12
+  const anio = hoy.getFullYear();
+
+  // Solo ejecutar el día 1 del mes
+  if (dia !== 1) return;
+
+  const mesClave = `${anio}-${String(mes).padStart(2, "0")}`;
+
+  db.all("SELECT * FROM clientes", [], (err, clientes) => {
+    if (err) {
+      console.error("❌ Error al leer clientes:", err);
+      return;
+    }
+
+    clientes.forEach((cliente) => {
+      if (!cliente.sueldo_mensual || cliente.sueldo_mensual === 0) return;
+
+      // Verificamos si ya se aplicó este mes
+      db.get(
+        `SELECT COUNT(*) AS count FROM movimientos
+         WHERE nombre_cliente = ? AND tipo = 'SUELDO_MENSUAL' AND mes = ?`,
+        [cliente.nombre_cliente, mesClave],
+        (err, row) => {
+          if (err) {
+            console.error("Error comprobando mensualidad:", err);
+            return;
+          }
+
+          if (row.count > 0) return; // ya aplicado este mes
+
+          // Insertamos nuevo movimiento mensual
+          const importe = -Math.abs(cliente.sueldo_mensual);
+
+          db.run(
+            `INSERT INTO movimientos (fecha, tipo, nombre_cliente, concepto, importe, mes)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              new Date().toISOString().split("T")[0],
+              "SUELDO_MENSUAL",
+              cliente.nombre_cliente,
+              `Sueldo mensual ${mesClave}`,
+              importe,
+              mesClave,
+            ],
+            (err) => {
+              if (err) {
+                console.error("❌ Error insertando sueldo mensual:", err);
+              } else {
+                // actualizamos saldo del cliente
+                db.run(
+                  `UPDATE clientes SET saldo_actual = saldo_actual + ? WHERE nombre_cliente = ?`,
+                  [importe, cliente.nombre_cliente],
+                  (err2) => {
+                    if (!err2) {
+                      logInfo(
+                        `💼 Sueldo mensual aplicado a ${cliente.nombre_cliente}: ${importe}€`
+                      );
+                    }
+                  }
+                );
+              }
+            }
+          );
+        }
+      );
+    });
+  });
 }

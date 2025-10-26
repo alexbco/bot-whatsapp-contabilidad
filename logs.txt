@@ -11,3 +11,9 @@
 [INFO] 2025-10-25T17:02:07.306Z ⏰ Cron interno activo: revisará mensualidades cada hora.
 [INFO] 2025-10-25T17:03:07.978Z ✅ Servidor iniciado en http://localhost:3000
 [INFO] 2025-10-25T17:03:07.981Z ⏰ Cron interno activo: revisará mensualidades cada hora.
+[INFO] 2025-10-26T12:33:56.057Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-26T12:33:56.060Z ⏰ Cron interno activo: revisará mensualidades cada hora.
+[INFO] 2025-10-26T13:34:39.619Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-26T13:34:39.621Z ⏰ Cron interno activo: revisará mensualidades cada hora.
+[INFO] 2025-10-26T13:38:53.861Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-26T13:38:53.863Z ⏰ Cron interno activo: revisará mensualidades cada hora.
