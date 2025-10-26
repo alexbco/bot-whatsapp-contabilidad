@@ -17,3 +17,6 @@
 [INFO] 2025-10-26T13:34:39.621Z ⏰ Cron interno activo: revisará mensualidades cada hora.
 [INFO] 2025-10-26T13:38:53.861Z ✅ Servidor iniciado en http://localhost:3000
 [INFO] 2025-10-26T13:38:53.863Z ⏰ Cron interno activo: revisará mensualidades cada hora.
+[INFO] 2025-10-26T14:22:15.307Z 📂 Carpeta /public/extractos creada automáticamente
+[INFO] 2025-10-26T14:22:15.321Z ✅ Servidor iniciado en http://localhost:3000
+[INFO] 2025-10-26T14:22:15.322Z ⏰ Cron interno activo: revisará mensualidades cada hora.

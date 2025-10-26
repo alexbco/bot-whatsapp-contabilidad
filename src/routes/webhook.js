@@ -10,11 +10,49 @@ import {
   getExtractoMensual,
 } from "../db/repository.js";
 
+import path from "path";
+import { fileURLToPath } from "url";
+import { generaExtractoPDF } from "../utils/pdf.js";
 import { parseIncomingText } from "../utils/parser.js";
 import { formatExtractoWhatsApp } from "../utils/formatExtracto.js";
 import { getAyudaUso } from "../utils/ayuda.js";
 import { sendWhatsApp } from "../utils/helpers.js";
 import { guardarFacturaImagen } from "../utils/facturas.js";
+
+// =========================
+// rutas útiles para PDFs
+// =========================
+
+// donde estamos ahora mismo (carpeta actual de ESTE archivo)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// carpeta /public/extractos (asegúrate de exponer "public" con express.static en app.js)
+const EXTRACTOS_DIR = path.join(__dirname, "..", "public", "extractos");
+
+// URL pública base del servidor
+// OJO: cámbialo si ya tienes un helper tipo getPublicBaseUrl()
+function getServerBaseUrl() {
+  // ejemplo Render / tu dominio / localhost
+  // En producción pon tu URL pública rollo "https://mi-bot.onrender.com"
+  return process.env.PUBLIC_BASE_URL || "http://localhost:3000";
+}
+
+// construir ruta física y pública del PDF
+function getExtractoFilePath(clienteNombreCompleto, mes) {
+  // normalizamos para nombre de archivo: "Antonio_Perez-2025-10.pdf"
+  const safeCliente = clienteNombreCompleto
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_]/g, "");
+  const safeMes = mes.replace(/[^0-9a-zA-Z_-]/g, "");
+  const fileName = `${safeCliente}-${safeMes}.pdf`;
+
+  const absPath = path.join(EXTRACTOS_DIR, fileName); // ruta absoluta física
+  const publicUrl = `${getServerBaseUrl()}/extractos/${fileName}`; // URL que se puede abrir
+
+  return { absPath, publicUrl };
+}
 
 // memoria temporal para confirmaciones pendientes
 const pendingActions = {}; // { [fromNumber]: { action: 'COMPRA', data: {...} } }
@@ -133,15 +171,44 @@ async function handleMensaje(fromNumber, text, facturaPath) {
   if (parsed.action === "EXTRACTO") {
     const { clienteNombreCompleto, mes } = parsed.data;
 
+    // sacar la info mensual (movimientos, totales, saldo...)
     const info = getExtractoMensual({
       nombreCliente: clienteNombreCompleto,
       mes,
     });
 
+    // formato corto para verlo en WhatsApp
     const resumenTxt = formatExtractoWhatsApp(info);
     await sendWhatsApp(fromNumber, resumenTxt);
 
-    // FUTURO: generar PDF y pasar link
+    // --- NUEVO: generar PDF y pasar link ---
+    try {
+      // calcula dónde guardar el PDF y cómo se va a llamar públicamente
+      const { absPath, publicUrl } = getExtractoFilePath(
+        clienteNombreCompleto,
+        mes
+      );
+
+      // genera el PDF físicamente en disco
+      await generaExtractoPDF(info, absPath);
+
+      // manda link al usuario
+      await sendWhatsApp(
+        fromNumber,
+        [
+          "🧾 Extracto en PDF listo.",
+          "Puedes abrirlo o reenviarlo:",
+          publicUrl,
+        ].join("\n")
+      );
+    } catch (pdfErr) {
+      console.error("❌ Error generando PDF de extracto:", pdfErr);
+      await sendWhatsApp(
+        fromNumber,
+        "⚠️ He podido calcular el extracto, pero no he podido generar el PDF."
+      );
+    }
+
     return;
   }
 
@@ -258,9 +325,7 @@ async function confirmarAccionPendiente(fromNumber) {
         `Saldo actual del cliente: ${euros(result.saldo_actual_nuevo)}`,
       ].join("\n")
     );
-  }
-
-  else if (action === "TRABAJOS") {
+  } else if (action === "TRABAJOS") {
     result = registrarTrabajos({
       nombreCliente: data.clienteNombreCompleto,
       concepto: data.concepto,
@@ -274,9 +339,7 @@ async function confirmarAccionPendiente(fromNumber) {
         `Saldo actual del cliente: ${euros(result.saldo_actual_nuevo)}`,
       ].join("\n")
     );
-  }
-
-  else if (action === "MARI") {
+  } else if (action === "MARI") {
     result = registrarMari({
       nombreCliente: data.clienteNombreCompleto,
       concepto: data.concepto,
@@ -292,9 +355,7 @@ async function confirmarAccionPendiente(fromNumber) {
         `Saldo actual del cliente: ${euros(result.saldo_actual_nuevo)}`,
       ].join("\n")
     );
-  }
-
-  else if (action === "PAGO_CLIENTE") {
+  } else if (action === "PAGO_CLIENTE") {
     result = registrarPagoCliente({
       nombreCliente: data.clienteNombreCompleto,
       cantidad: data.cantidad,
@@ -312,3 +373,4 @@ async function confirmarAccionPendiente(fromNumber) {
   // ya no está pendiente
   delete pendingActions[fromNumber];
 }
+
