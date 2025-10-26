@@ -29,9 +29,6 @@ import { guardarFacturaImagen } from "../utils/facturas.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// carpeta /public/extractos (asegúrate de exponer "public" con express.static en app.js)
-const EXTRACTOS_DIR = path.join(__dirname, "..", "public", "extractos");
-
 // URL pública base del servidor
 // OJO: cámbialo si ya tienes un helper tipo getPublicBaseUrl()
 function getServerBaseUrl() {
