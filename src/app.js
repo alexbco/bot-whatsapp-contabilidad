@@ -14,6 +14,9 @@ import {
 } from "./db/repository.js";
 import { logInfo, logWarn } from "./utils/loger.js";
 
+// 👇 añadimos esto ARRIBA, no en medio:
+import { EXTRACTOS_DIR } from "./config/paths.js";
+
 // ========================
 // 1) CONFIG ENV, APP BASE
 // ========================
@@ -66,20 +69,20 @@ app.set("EXPORT_DIR", exportPath);
 // ========================
 // 4) STATIC: EXTRACTOS (PDF)
 // ========================
-// carpeta física donde dejaremos los PDFs de extractos mensuales
-const extractosPath = path.join(__dirname, "..", "public", "extractos");
-if (!fs.existsSync(extractosPath)) {
-  fs.mkdirSync(extractosPath, { recursive: true });
+// A) aseguramos que la carpeta exista por si Render arranca fría
+if (!fs.existsSync(EXTRACTOS_DIR)) {
+  fs.mkdirSync(EXTRACTOS_DIR, { recursive: true });
   logInfo("📂 Carpeta /public/extractos creada automáticamente");
 }
 
-// Servimos /public/extractos como estático.
-// -> Un PDF guardado en /public/extractos/AntonioPerez-2025-10.pdf
-//    se podrá abrir vía  http://TU-DOMINIO/extractos/AntonioPerez-2025-10.pdf
-app.use("/extractos", express.static(extractosPath));
+// B) Servimos esa carpeta en /extractos
+// -> Un PDF guardado en /public/extractos/alex_blanco-2025-10.pdf
+//    se podrá abrir vía
+//    https://tu-dominio.onrender.com/extractos/alex_blanco-2025-10.pdf
+app.use("/extractos", express.static(EXTRACTOS_DIR));
 
-// También guardo esta ruta en app por si quieres reutilizarla
-app.set("EXTRACTOS_DIR", extractosPath);
+// C) Guardamos la ruta física en la app (si quieres usarla en otros sitios)
+app.set("EXTRACTOS_DIR", EXTRACTOS_DIR);
 
 // ========================
 // 5) RUTAS HTTP
@@ -99,7 +102,7 @@ app.use("/webhook", webhookRouter);
 // cada hora comprobamos si hay que aplicar mensualidad
 setInterval(() => {
   aplicarSueldoMensualAutomatico();
-  // si quieres que también llame a aplicarMensualidadDelMesActual() hazlo aquí
+  // si quieres también aplicarMensualidadDelMesActual(), descomenta abajo:
   // aplicarMensualidadDelMesActual();
 }, 60 * 60 * 1000); // cada hora
 
