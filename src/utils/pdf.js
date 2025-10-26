@@ -1,160 +1,115 @@
-import PDFDocument from "pdfkit";
+// src/utils/pdf.js
 import fs from "fs";
-import path from "path";
+import PDFDocument from "pdfkit";
 
 /**
- * generaExtractoPDF(info, outputAbsPath)
- *
- * info = {
- *   cliente: { nombre, saldoActual },
- *   mes: "2025-10",
- *   resumen: {
- *     totalFacturadoEseMes,
- *     totalPagosEseMes,
- *   },
- *   movimientos: [
- *     {
- *       fecha,              // "2025-10-03"
- *       tipo,               // "COMPRA" | "TRABAJOS" | "MARI" | "SUELDO_MENSUAL" | "PAGO_CLIENTE"
- *       concepto,
- *       precioCliente,      // lo que se le cobra (para COMPRA/TRABAJOS/MARI/SUELDO_MENSUAL)
- *       monto,              // lo que paga el cliente (para PAGO_CLIENTE)
- *       facturaPath         // ruta local a la imagen de factura (puede ser null)
- *     },
- *     ...
- *   ]
- * }
- *
- * outputAbsPath = ruta física tipo /app/exports/juan_carlos_2025-10.pdf
+ * generaExtractoPDF(info, absPath)
+ * - info: objeto que viene de getExtractoMensual(...)
+ * - absPath: ruta absoluta donde guardar el PDF final
  */
-export function generaExtractoPDF(info, outputAbsPath) {
+export async function generaExtractoPDF(info, absPath) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ autoFirstPage: false });
+      // 1. crear carpeta destino si no existe
+      const dir = absPath.substring(0, absPath.lastIndexOf("/"));
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
 
-      const stream = fs.createWriteStream(outputAbsPath);
+      // 2. crear el doc PDF
+      const doc = new PDFDocument({ margin: 40 });
+
+      const stream = fs.createWriteStream(absPath);
       doc.pipe(stream);
 
-      // ============= PÁGINA 1: RESUMEN =================
-      doc.addPage({ margin: 40 });
+      // CABECERA
+      doc
+        .fontSize(16)
+        .text("Extracto mensual", { underline: true })
+        .moveDown(0.5);
 
-      doc.fontSize(18).text("Extracto mensual", { align: "center" });
+      doc
+        .fontSize(12)
+        .text(`Cliente: ${info.clienteNombreCompleto || "-"}`)
+        .text(`Mes: ${info.mes || "-"}`)
+        .moveDown(1);
+
+      // DETALLE DE MOVIMIENTOS
+      doc.fontSize(13).text("Detalle de movimientos:", { underline: true });
       doc.moveDown(0.5);
 
-      doc.fontSize(12).text(`Cliente: ${info.cliente.nombre}`);
-      doc.text(`Mes: ${info.mes}`);
+      if (Array.isArray(info.movimientos) && info.movimientos.length > 0) {
+        info.movimientos.forEach((mov) => {
+          // aquí yo asumo que cada "mov" tiene algo tipo:
+          // { fecha: '2025-10-26', tipo: 'Compra', concepto: 'césped', importe: 10.0 }
+          // si tu estructura real es distinta, adáptalo aquí
+          const fecha = mov.fecha || mov.dia || mov.fechaOperacion || "¿fecha?";
+          const tipo = mov.tipo || mov.categoria || "-";
+          const concepto = mov.concepto || mov.detalle || "-";
+
+          // en compras/trabajos/etc a veces el dinero está en otra prop:
+          // intenta importe || totalCobrado || precioCliente etc
+          const importe =
+            mov.importe ??
+            mov.totalCobrado ??
+            mov.precioCliente ??
+            mov.cantidad ??
+            0;
+
+          doc
+            .fontSize(11)
+            .text(
+              `• ${fecha} | ${tipo} | ${concepto} | ${formateaEuros(importe)}`,
+              { lineBreak: true }
+            );
+        });
+      } else {
+        doc.fontSize(11).text("No hay movimientos en este periodo.");
+      }
+
       doc.moveDown(1);
 
-      // resumen económico
-      const eur = (n) =>
-        (Number(n || 0).toFixed(2) + " €").replace(".", ",");
-
-      doc.text(`Total servicios/materiales del mes: ${eur(info.resumen.totalFacturadoEseMes)}`);
-      doc.text(`Pagos realizados este mes:         ${eur(info.resumen.totalPagosEseMes)}`);
-      doc.text(`Saldo pendiente a día de hoy:      ${eur(info.cliente.saldoActual)}`);
-      doc.moveDown(1.5);
-
-      // TABLA DE MOVIMIENTOS
-      doc.fontSize(14).text("Movimientos del mes:");
+      // RESUMEN DEL MES
+      doc.fontSize(13).text("Resumen del mes:", { underline: true });
       doc.moveDown(0.5);
 
-      doc.fontSize(10);
-      // cabecera
-      doc.text("Fecha", 40, doc.y, { continued: true, width: 80 });
-      doc.text("Tipo", 110, doc.y, { continued: true, width: 90 });
-      doc.text("Concepto", 200, doc.y, { continued: true, width: 220 });
-      doc.text("Importe", 420, doc.y);
-      doc.moveDown(0.5);
+      const facturado = info.totales?.facturado ?? 0;
+      const pagado = info.totales?.pagado ?? 0;
+      const beneficioBruto = info.totales?.beneficioBruto ?? 0;
+      const beneficioCompras = info.totales?.beneficioCompras ?? 0;
 
-      info.movimientos.forEach((m) => {
-        const fechaCorta = (m.fecha || "").slice(0, 10);
+      doc.fontSize(11).text(`Facturado este mes: ${formateaEuros(facturado)}`);
+      doc.fontSize(11).text(`Pagos recibidos:   ${formateaEuros(pagado)}`);
+      doc.fontSize(11).text(`Beneficio bruto:   ${formateaEuros(beneficioBruto)}`);
+      doc
+        .fontSize(11)
+        .text(`Beneficio compras: ${formateaEuros(beneficioCompras)}`);
 
-        let importeVisible;
-        if (m.tipo === "PAGO_CLIENTE") {
-          // Pagos los mostramos como negativo (ya te pagó esto)
-          importeVisible =
-            "-" + Number(m.monto || 0).toFixed(2).replace(".", ",") + " €";
-        } else if (m.tipo === "SUELDO_MENSUAL") {
-          // Sueldo mensual también es un cargo, así que va positivo hacia el cliente
-          importeVisible =
-            Number(m.precioCliente || m.monto || 0)
-              .toFixed(2)
-              .replace(".", ",") + " €";
-        } else {
-          // Compra / Trabajos / Mari
-          importeVisible =
-            Number(m.precioCliente || 0).toFixed(2).replace(".", ",") + " €";
-        }
+      doc.moveDown(1);
 
-        doc.text(fechaCorta, 40, doc.y, { continued: true, width: 80 });
-        doc.text(tipoBonito(m.tipo), 110, doc.y, { continued: true, width: 90 });
-        doc.text(m.concepto || "-", 200, doc.y, { continued: true, width: 220 });
-        doc.text(importeVisible, 420, doc.y);
-        doc.moveDown(0.5);
+      // SALDO PENDIENTE
+      const saldo = info.saldo_actual ?? 0;
+      doc.fontSize(13).text("Saldo pendiente a día de hoy:", {
+        underline: true,
       });
-
-      // ============= PÁGINAS SIGUIENTES: FACTURAS =================
-      const conFactura = info.movimientos.filter(
-        (m) => m.facturaPath
-      );
-
-      conFactura.forEach((m) => {
-        doc.addPage({ margin: 40 });
-        const fechaCorta = (m.fecha || "").slice(0, 10);
-
-        doc.fontSize(14).text("Factura / justificante");
-        doc.moveDown(0.5);
-
-        doc.fontSize(10).text(
-          `${fechaCorta} · ${tipoBonito(m.tipo)} · ${m.concepto || ""}`
+      doc.moveDown(0.5);
+      doc
+        .fontSize(11)
+        .text(
+          `${formateaEuros(
+            saldo
+          )}  (negativo = te queda por pagarte / positivo = tiene saldo a favor)`
         );
 
-        // intentar meter la imagen si existe físicamente:
-        try {
-          // ojo: facturaPath en DB puede ser "/facturas/x.jpg"
-          // construimos path absoluto desde el root del proyecto
-          const absPath = path.join(
-            process.cwd(),
-            m.facturaPath.replace(/^\//, "")
-          );
-
-          if (fs.existsSync(absPath)) {
-            doc.moveDown(1);
-            doc.image(absPath, {
-              fit: [500, 700],
-              align: "center",
-              valign: "center",
-            });
-          } else {
-            doc.moveDown(1);
-            doc
-              .fontSize(10)
-              .fillColor("red")
-              .text("⚠ No se encontró la imagen en el servidor.");
-            doc.fillColor("black");
-          }
-        } catch (err) {
-          doc.moveDown(1);
-          doc
-            .fontSize(10)
-            .fillColor("red")
-            .text("⚠ Error cargando imagen.");
-          doc.fillColor("black");
-        }
-      });
-
-      // cerrar doc
+      // cerrar el PDF
       doc.end();
 
       stream.on("finish", () => {
-        resolve({
-          ok: true,
-          path: outputAbsPath,
-        });
+        resolve();
       });
 
-      stream.on("error", (e) => {
-        reject(e);
+      stream.on("error", (err) => {
+        reject(err);
       });
     } catch (err) {
       reject(err);
@@ -162,19 +117,7 @@ export function generaExtractoPDF(info, outputAbsPath) {
   });
 }
 
-function tipoBonito(tipo) {
-  switch (tipo) {
-    case "COMPRA":
-      return "Compra";
-    case "TRABAJOS":
-      return "Trabajo";
-    case "MARI":
-      return "Limpieza";
-    case "SUELDO_MENSUAL":
-      return "Mantenimiento";
-    case "PAGO_CLIENTE":
-      return "Pago";
-    default:
-      return tipo;
-  }
+function formateaEuros(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "-";
+  return Number(n).toFixed(2).replace(".", ",") + "€";
 }

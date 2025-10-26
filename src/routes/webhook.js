@@ -10,6 +10,8 @@ import {
   getExtractoMensual,
 } from "../db/repository.js";
 
+import { EXTRACTOS_DIR, getServerBaseUrl } from "../config/paths.js";
+import fs from "fs"; // la vamos a usar para asegurar carpeta
 import path from "path";
 import { fileURLToPath } from "url";
 import { generaExtractoPDF } from "../utils/pdf.js";
@@ -40,16 +42,23 @@ function getServerBaseUrl() {
 
 // construir ruta física y pública del PDF
 function getExtractoFilePath(clienteNombreCompleto, mes) {
-  // normalizamos para nombre de archivo: "Antonio_Perez-2025-10.pdf"
+  // normalizamos para nombre de archivo
   const safeCliente = clienteNombreCompleto
     .trim()
+    .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-zA-Z0-9_]/g, "");
+    .replace(/[^a-z0-9_]/g, ""); // solo minúscula y _
+
   const safeMes = mes.replace(/[^0-9a-zA-Z_-]/g, "");
   const fileName = `${safeCliente}-${safeMes}.pdf`;
 
-  const absPath = path.join(EXTRACTOS_DIR, fileName); // ruta absoluta física
-  const publicUrl = `${getServerBaseUrl()}/extractos/${fileName}`; // URL que se puede abrir
+  // aseguramos carpeta
+  if (!fs.existsSync(EXTRACTOS_DIR)) {
+    fs.mkdirSync(EXTRACTOS_DIR, { recursive: true });
+  }
+
+  const absPath = path.join(EXTRACTOS_DIR, fileName);
+  const publicUrl = `${getServerBaseUrl()}/extractos/${fileName}`;
 
   return { absPath, publicUrl };
 }
