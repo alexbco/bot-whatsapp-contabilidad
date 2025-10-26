@@ -357,7 +357,7 @@ export function getExtractoMensual({ nombreCliente, mes }) {
     return { ok: false, error: `No existe el cliente "${nombreCliente}".` };
   }
 
-  const movimientos = db
+  const movimientosRaw = db
     .prepare(
       `
       SELECT
@@ -383,39 +383,58 @@ export function getExtractoMensual({ nombreCliente, mes }) {
   let beneficioBrutoMes = 0;
   let beneficioSoloComprasMes = 0;
 
-  movimientos.forEach((m) => {
+  // también formateamos cada movimiento para el PDF
+  const movimientos = movimientosRaw.map((m) => {
+    // calculamos importe = lo que se le cobró al cliente en esa línea
+    const importe =
+      m.precioCliente ??
+      m.monto ?? // por si es un pago cliente
+      0;
+
+    // totales
     if (m.tipo === "PAGO_CLIENTE") {
       totalPagosEseMes += m.monto || 0;
     } else {
       totalFacturadoEseMes += m.precioCliente || 0;
       beneficioBrutoMes += m.beneficio || 0;
-
       if (m.tipo === "COMPRA") {
         beneficioSoloComprasMes += m.beneficio || 0;
       }
     }
+
+    return {
+      fecha: m.fecha,                 // ej "2025-10-26T20:23:15.390Z"
+      tipo: m.tipo,                   // "COMPRA" | "TRABAJOS" | "MARI" | etc
+      concepto: m.concepto,           // "regalos" | "poda" | ...
+      importe: importe,               // número en €
+      facturaPath: m.facturaPath || null, // 👈 la ruta en disco /facturas/... o null
+    };
   });
 
   const saldoActual = cliente.saldo_actual;
 
+  // devolvemos en el shape que el PDF Y WhatsApp entienden
   return {
     ok: true,
-    cliente: {
-      id: cliente.id,
-      nombre: cliente.nombre,
-      saldoActual,
-      cuotaMensual: cliente.cuota_mensual,
+
+    // nombre del cliente COMO STRING ya plano:
+    clienteNombreCompleto: cliente.nombre,
+
+    mes, // "2025-10"
+
+    movimientos, // array normalizado tal cual lo quiere el PDF
+
+    totales: {
+      facturado: totalFacturadoEseMes,
+      pagado: totalPagosEseMes,
+      beneficioBruto: beneficioBrutoMes,
+      beneficioCompras: beneficioSoloComprasMes,
     },
-    mes,
-    movimientos,
-    resumen: {
-      totalFacturadoEseMes,
-      totalPagosEseMes,
-      beneficioBrutoMes,
-      beneficioSoloComprasMes,
-    },
+
+    saldo_actual: saldoActual,
   };
 }
+
 export function aplicarSueldoMensualAutomatico() {
   const hoy = new Date();
   const dia = hoy.getDate();
