@@ -11,9 +11,10 @@ import {
 } from "../db/repository.js";
 
 import { EXTRACTOS_DIR, getServerBaseUrl } from "../config/paths.js";
-import fs from "fs"; // la vamos a usar para asegurar carpeta
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
 import { generaExtractoPDF } from "../utils/pdf.js";
 import { parseIncomingText } from "../utils/parser.js";
 import { formatExtractoWhatsApp } from "../utils/formatExtracto.js";
@@ -22,34 +23,30 @@ import { sendWhatsApp } from "../utils/helpers.js";
 import { guardarFacturaImagen } from "../utils/facturas.js";
 
 // =========================
-// rutas útiles para PDFs
+// util interno para generar archivo PDF de extracto
 // =========================
 
-// donde estamos ahora mismo (carpeta actual de ESTE archivo)
+// Necesario si en algún log quieres saber desde dónde se ejecuta este archivo
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// URL pública base del servidor
-// OJO: cámbialo si ya tienes un helper tipo getPublicBaseUrl()
-function getServerBaseUrl() {
-  // ejemplo Render / tu dominio / localhost
-  // En producción pon tu URL pública rollo "https://mi-bot.onrender.com"
-  return process.env.PUBLIC_BASE_URL || "http://localhost:3000";
-}
-
-// construir ruta física y pública del PDF
+/**
+ * Construye:
+ *  - absPath: ruta ABSOLUTA en disco donde guardaremos el PDF
+ *  - publicUrl: URL pública que el cliente puede abrir
+ */
 function getExtractoFilePath(clienteNombreCompleto, mes) {
-  // normalizamos para nombre de archivo
+  // normalizamos el nombre del archivo
   const safeCliente = clienteNombreCompleto
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, ""); // solo minúscula y _
+    .replace(/[^a-z0-9_]/gi, ""); // quitamos acentos/símbolos raros
 
   const safeMes = mes.replace(/[^0-9a-zA-Z_-]/g, "");
   const fileName = `${safeCliente}-${safeMes}.pdf`;
 
-  // aseguramos carpeta
+  // por si en runtime la carpeta aún no existe (Render puede reiniciar frío)
   if (!fs.existsSync(EXTRACTOS_DIR)) {
     fs.mkdirSync(EXTRACTOS_DIR, { recursive: true });
   }
@@ -60,8 +57,8 @@ function getExtractoFilePath(clienteNombreCompleto, mes) {
   return { absPath, publicUrl };
 }
 
-// memoria temporal para confirmaciones pendientes
-const pendingActions = {}; // { [fromNumber]: { action: 'COMPRA', data: {...} } }
+// Memoria temporal para confirmaciones pendientes tipo "¿lo guardo? sí/no"
+const pendingActions = {}; // { [fromNumber]: { action: 'COMPRA' | 'TRABAJOS' | 'MARI' | 'PAGO_CLIENTE', data: {...} } }
 
 // --------------------------------------------------
 // WEBHOOK PRINCIPAL (Meta llama aquí)
@@ -88,7 +85,7 @@ router.post("/", async (req, res) => {
       const caption = messageObj.image?.caption || "";
       const mediaId = messageObj.image?.id;
 
-      // guardamos foto físicamente y pillamos la ruta (stub si hace falta)
+      // guardamos foto físicamente y pillamos la ruta
       const facturaPath = await guardarFacturaImagen(mediaId);
 
       await handleMensaje(fromNumber, caption, facturaPath);
@@ -187,9 +184,8 @@ async function handleMensaje(fromNumber, text, facturaPath) {
     const resumenTxt = formatExtractoWhatsApp(info);
     await sendWhatsApp(fromNumber, resumenTxt);
 
-    // --- NUEVO: generar PDF y pasar link ---
+    // --- Generar PDF y mandar link ---
     try {
-      // calcula dónde guardar el PDF y cómo se va a llamar públicamente
       const { absPath, publicUrl } = getExtractoFilePath(
         clienteNombreCompleto,
         mes
@@ -230,7 +226,6 @@ async function handleMensaje(fromNumber, text, facturaPath) {
 // --------------------------------------------------
 function euros(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "-";
-  // usamos coma
   return Number(n).toFixed(2).replace(".", ",") + " €";
 }
 
@@ -376,7 +371,6 @@ async function confirmarAccionPendiente(fromNumber) {
     );
   }
 
-  // ya no está pendiente
+  // limpiar la acción pendiente después de confirmarla
   delete pendingActions[fromNumber];
 }
-
