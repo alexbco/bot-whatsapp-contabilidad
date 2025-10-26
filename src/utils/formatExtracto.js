@@ -1,87 +1,102 @@
-function eur(n) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "-";
-  return Number(n).toFixed(2) + "€";
+// src/utils/formatExtracto.js
+
+// Este formatter convierte el objeto que devuelve getExtractoMensual()
+// en el mensajito de WhatsApp bonito tipo:
+//
+// 📅 Extracto 2025-10
+// Cliente: alex blanco
+//
+// DETALLE:
+// • 2025-10-26 | COMPRA | regalos | 30,00€
+// ...
+//
+// RESUMEN DEL MES:
+// Facturado este mes: 130,00€
+// Pagos recibidos:    0,00€
+// Beneficio bruto:    120,00€
+// Beneficio compras:  0,00€
+//
+// SALDO PENDIENTE A DÍA DE HOY:
+// -130,00€ (negativo = te queda por pagarte / positivo = tiene saldo a favor)
+
+function euros(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "0,00€";
+  return Number(n).toFixed(2).replace(".", ",") + "€";
 }
 
-// Texto corto y "humano" del tipo de movimiento
-function etiquetaTipo(tipo) {
-  switch (tipo) {
-    case "COMPRA":
-      return "Compra";
-    case "TRABAJOS":
-      return "Trabajos";
-    case "MARI":
-      return "Mari";
-    case "MENSUALIDAD":
-      return "Mensualidad";
-    case "PAGO_CLIENTE":
-      return "Pago";
-    default:
-      return tipo;
-  }
-}
+export function formatExtractoWhatsApp(info) {
+  // Ajustamos a los NUEVOS nombres establecidos en getExtractoMensual()
 
-// Una línea por movimiento
-function renderLineaMovimiento(m) {
-  // fecha corta YYYY-MM-DD
-  const fechaCorta = m.fecha?.slice(0, 10) || "-";
+  const nombreCliente =
+    info.clienteNombreCompleto ||
+    (info.cliente && info.cliente.nombre) || // fallback por si algún día vuelve
+    "-";
 
-  // importe que vamos a mostrar en la línea
-  // regla:
-  //  - si es PAGO_CLIENTE => usamos monto (lo que ha pagado el cliente)
-  //  - si no => usamos precioCliente (lo que le cobramos)
-  let importeVisible = null;
-  if (m.tipo === "PAGO_CLIENTE") {
-    importeVisible = m.monto ?? null;
-  } else {
-    importeVisible = m.precioCliente ?? null;
-  }
-  const tieneFactura = m.facturaPath ? "📸" : "";
+  const mesStr = info.mes || "-";
 
-  return `• ${fechaCorta} | ${etiquetaTipo(m.tipo)} | ${m.concepto} ${tieneFactura} | ${eur(importeVisible)}`;
-}
+  // movimientos normalizados
+  const lineasDetalle = Array.isArray(info.movimientos)
+    ? info.movimientos.map((m) => {
+        // formateamos fecha rollo yyyy-mm-dd
+        const fechaCruda =
+          m.fecha ||
+          m.dia ||
+          m.fechaOperacion ||
+          m.created_at ||
+          m.fechaMovimiento ||
+          "";
+        const fechaLimpia = limpiaFecha(fechaCruda);
 
-export function formatExtractoWhatsApp(data) {
-  // data viene de getExtractoMensual()
+        const tipo = m.tipo || "—";
+        const concepto = m.concepto || "—";
 
-  if (!data || data.ok === false) {
-    return `❌ ${data?.error || "No se pudo generar el extracto."}`;
-  }
+        const importe =
+          m.importe ??
+          m.precioCliente ??
+          m.totalCobrado ??
+          m.monto ??
+          0;
 
-  const nombreCliente = data.cliente.nombre;
-  const saldoActual = data.cliente.saldoActual;
-  const mes = data.mes;
+        return `• ${fechaLimpia} | ${tipo} | ${concepto} | ${euros(importe)}`;
+      })
+    : ["(sin movimientos este mes)"];
 
-  const {
-    totalFacturadoEseMes,
-    totalPagosEseMes,
-    beneficioBrutoMes,
-    beneficioSoloComprasMes,
-  } = data.resumen;
+  // totales
+  const facturado = info.totales?.facturado ?? 0;
+  const pagado = info.totales?.pagado ?? 0;
+  const beneficioBruto = info.totales?.beneficioBruto ?? 0;
+  const beneficioCompras = info.totales?.beneficioCompras ?? 0;
 
-  // Detalle de movimientos
-  let bloqueMovs;
-  if (!data.movimientos || data.movimientos.length === 0) {
-    bloqueMovs = "(sin movimientos este mes)";
-  } else {
-    bloqueMovs = data.movimientos.map(renderLineaMovimiento).join("\n");
-  }
+  // saldo actual
+  const saldo = info.saldo_actual ?? 0;
 
-  // Montamos el mensaje
+  // construimos mensaje final
   return [
-    `📆 Extracto ${mes}`,
+    `📅 Extracto ${mesStr}`,
     `Cliente: ${nombreCliente}`,
-    ``,
+    "",
     `DETALLE:`,
-    bloqueMovs,
-    ``,
+    ...lineasDetalle,
+    "",
     `RESUMEN DEL MES:`,
-    `  Facturado este mes: ${eur(totalFacturadoEseMes)}`,
-    `  Pagos recibidos:    ${eur(totalPagosEseMes)}`,
-    `  Beneficio bruto:    ${eur(beneficioBrutoMes)}`,
-    `  Beneficio compras:  ${eur(beneficioSoloComprasMes)}`,
-    ``,
+    `Facturado este mes: ${euros(facturado)}`,
+    `Pagos recibidos:    ${euros(pagado)}`,
+    `Beneficio bruto:    ${euros(beneficioBruto)}`,
+    `Beneficio compras:  ${euros(beneficioCompras)}`,
+    "",
     `SALDO PENDIENTE A DÍA DE HOY:`,
-    `  ${eur(saldoActual)}  (negativo = te queda por pagarte / positivo = tiene saldo a favor)`,
+    `${euros(
+      saldo
+    )}  (negativo = te queda por pagarte / positivo = tiene saldo a favor)`,
   ].join("\n");
+}
+
+// helper para cortar la T y la Z
+function limpiaFecha(f) {
+  if (!f || typeof f !== "string") return f || "¿fecha?";
+  const tIndex = f.indexOf("T");
+  if (tIndex !== -1) {
+    return f.slice(0, tIndex);
+  }
+  return f;
 }
