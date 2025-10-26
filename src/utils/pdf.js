@@ -6,23 +6,45 @@ import PDFDocument from "pdfkit";
  * generaExtractoPDF(info, absPath)
  * - info: objeto que viene de getExtractoMensual(...)
  * - absPath: ruta absoluta donde guardar el PDF final
+ *
+ * Estructura esperada de info (lo alineamos a lo que ya mandas por WhatsApp):
+ * {
+ *   clienteNombreCompleto: "alex blanco",
+ *   mes: "2025-10",
+ *   movimientos: [
+ *      {
+ *        fecha: "2025-10-26T20:23:15.390Z",
+ *        tipo: "TRABAJOS",        // o "MARI", "COMPRA", "PAGO", etc.
+ *        concepto: "poda",
+ *        importe: 80
+ *      },
+ *      ...
+ *   ],
+ *   totales: {
+ *      facturado: 130,
+ *      pagado: 0,
+ *      beneficioBruto: 120,
+ *      beneficioCompras: 0
+ *   },
+ *   saldo_actual: -130
+ * }
  */
 export async function generaExtractoPDF(info, absPath) {
   return new Promise((resolve, reject) => {
     try {
-      // 1. crear carpeta destino si no existe
+      // ---- asegurar carpeta destino
       const dir = absPath.substring(0, absPath.lastIndexOf("/"));
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      // 2. crear el doc PDF
+      // ---- crear documento PDF
       const doc = new PDFDocument({ margin: 40 });
 
       const stream = fs.createWriteStream(absPath);
       doc.pipe(stream);
 
-      // CABECERA
+      // ===== CABECERA =====
       doc
         .fontSize(16)
         .text("Extracto mensual", { underline: true })
@@ -34,21 +56,37 @@ export async function generaExtractoPDF(info, absPath) {
         .text(`Mes: ${info.mes || "-"}`)
         .moveDown(1);
 
-      // DETALLE DE MOVIMIENTOS
+      // ===== DETALLE =====
       doc.fontSize(13).text("Detalle de movimientos:", { underline: true });
       doc.moveDown(0.5);
 
       if (Array.isArray(info.movimientos) && info.movimientos.length > 0) {
         info.movimientos.forEach((mov) => {
-          // aquí yo asumo que cada "mov" tiene algo tipo:
-          // { fecha: '2025-10-26', tipo: 'Compra', concepto: 'césped', importe: 10.0 }
-          // si tu estructura real es distinta, adáptalo aquí
-          const fecha = mov.fecha || mov.dia || mov.fechaOperacion || "¿fecha?";
-          const tipo = mov.tipo || mov.categoria || "-";
-          const concepto = mov.concepto || mov.detalle || "-";
+          // Normalizamos campos
+          const fechaCruda =
+            mov.fecha ||
+            mov.dia ||
+            mov.fechaOperacion ||
+            mov.created_at ||
+            mov.fechaMovimiento ||
+            "";
+          const fechaLimpia = formateaFecha(fechaCruda);
 
-          // en compras/trabajos/etc a veces el dinero está en otra prop:
-          // intenta importe || totalCobrado || precioCliente etc
+          const tipo =
+            mov.tipo ||
+            mov.categoria ||
+            mov.origen ||
+            mov.clase ||
+            "—";
+
+          const concepto =
+            mov.concepto ||
+            mov.detalle ||
+            mov.descripcion ||
+            mov.nota ||
+            "—";
+
+          // Detectar número €: intentamos en orden las props que sueles usar
           const importe =
             mov.importe ??
             mov.totalCobrado ??
@@ -59,7 +97,9 @@ export async function generaExtractoPDF(info, absPath) {
           doc
             .fontSize(11)
             .text(
-              `• ${fecha} | ${tipo} | ${concepto} | ${formateaEuros(importe)}`,
+              `• ${fechaLimpia} | ${tipo} | ${concepto} | ${formateaEuros(
+                importe
+              )}`,
               { lineBreak: true }
             );
         });
@@ -69,30 +109,32 @@ export async function generaExtractoPDF(info, absPath) {
 
       doc.moveDown(1);
 
-      // RESUMEN DEL MES
+      // ===== RESUMEN DEL MES =====
       doc.fontSize(13).text("Resumen del mes:", { underline: true });
       doc.moveDown(0.5);
 
+      // Aquí usamos exactamente las keys que usa tu WhatsApp
       const facturado = info.totales?.facturado ?? 0;
       const pagado = info.totales?.pagado ?? 0;
       const beneficioBruto = info.totales?.beneficioBruto ?? 0;
       const beneficioCompras = info.totales?.beneficioCompras ?? 0;
 
       doc.fontSize(11).text(`Facturado este mes: ${formateaEuros(facturado)}`);
-      doc.fontSize(11).text(`Pagos recibidos:   ${formateaEuros(pagado)}`);
-      doc.fontSize(11).text(`Beneficio bruto:   ${formateaEuros(beneficioBruto)}`);
+      doc.fontSize(11).text(`Pagos recibidos:    ${formateaEuros(pagado)}`);
+      doc.fontSize(11).text(`Beneficio bruto:    ${formateaEuros(beneficioBruto)}`);
       doc
         .fontSize(11)
-        .text(`Beneficio compras: ${formateaEuros(beneficioCompras)}`);
+        .text(`Beneficio compras:  ${formateaEuros(beneficioCompras)}`);
 
       doc.moveDown(1);
 
-      // SALDO PENDIENTE
+      // ===== SALDO =====
       const saldo = info.saldo_actual ?? 0;
       doc.fontSize(13).text("Saldo pendiente a día de hoy:", {
         underline: true,
       });
       doc.moveDown(0.5);
+
       doc
         .fontSize(11)
         .text(
@@ -104,17 +146,25 @@ export async function generaExtractoPDF(info, absPath) {
       // cerrar el PDF
       doc.end();
 
-      stream.on("finish", () => {
-        resolve();
-      });
-
-      stream.on("error", (err) => {
-        reject(err);
-      });
+      stream.on("finish", () => resolve());
+      stream.on("error", (err) => reject(err));
     } catch (err) {
       reject(err);
     }
   });
+}
+
+// === helpers ===
+
+// convierte 2025-10-26T20:23:15.390Z -> 2025-10-26
+function formateaFecha(f) {
+  if (!f || typeof f !== "string") return f || "¿fecha?";
+  // si viene con 'T', cortamos fecha al principio
+  const tIndex = f.indexOf("T");
+  if (tIndex !== -1) {
+    return f.slice(0, tIndex); // yyyy-mm-dd
+  }
+  return f;
 }
 
 function formateaEuros(n) {
